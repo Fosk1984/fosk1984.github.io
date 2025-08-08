@@ -3,15 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>💣 Bomb Countdown • Scan Quest (Hybrid Audio)</title>
+  <title>💣 Bomb Countdown • Scan Quest (Auto‑Arm + Hybrid Audio)</title>
   <style>
-    :root{
-      --bg: #000;
-      --fg: #e74c3c;
-      --fg-quiet: #ffb3b3;
-      --brand: #00ff88;
-      --text: #f2f2f2;
-    }
+    :root{ --bg:#000; --fg:#e74c3c; --fg-quiet:#ffb3b3; --brand:#00ff88; --text:#f2f2f2; }
     body { background: var(--bg); color: var(--fg); font-family: 'Courier New', monospace; text-align:center; overflow:hidden; margin:0; }
     header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid #111; }
     header img { height:40px; }
@@ -24,17 +18,15 @@
     button { background: var(--fg); color: #fff; cursor: pointer; }
     #message { font-size: 1.2em; margin-top: 10px; min-height: 1.4em; color: var(--text); }
     #flash { position: fixed; inset: 0; background: var(--fg); opacity: 0; pointer-events: none; }
-    #overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.95);
-      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; color:#fff;
-      z-index: 10; padding: 24px;
-    }
-    #controls { display:flex; align-items:center; gap:10px; justify-content:center; margin-top:8px; flex-wrap: wrap; }
-    #err { color:var(--fg-quiet); font-size:0.95em; min-height:1.2em; }
-    .hint { color:#ccc; font-size:0.95em; max-width: 680px; }
-    input[type="range"] { width: 200px; }
     footer { color:#777; font-size:12px; padding: 10px 0 16px; }
-    #status { font-size: 0.95em; color:#bbb; min-height:1.2em; }
+
+    /* Unmute pill */
+    #unmute {
+      position: fixed; right: 12px; bottom: 12px; z-index: 20;
+      background: #111; color:#fff; border:1px solid var(--brand);
+      padding:8px 12px; border-radius: 999px; display:none;
+    }
+    #status { position: fixed; left: 12px; bottom: 12px; color:#bbb; font-size:12px; }
   </style>
 </head>
 <body>
@@ -45,19 +37,6 @@
     <div class="brand">Scan Quest</div>
   </header>
 
-  <div id="overlay">
-    <h2>🔊 Click to Arm the Device</h2>
-    <p class="hint">If your browser blocks autoplay or MP3 decoding, we’ll auto‑fallback to a procedural soundtrack.</p>
-    <div id="controls">
-      <button id="startBtn">Arm & Begin</button>
-      <button id="testBtn" title="Plays a short beep to confirm audio works">Test sound</button>
-      <label>Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8"></label>
-      <button id="muteBtn">Mute</button>
-    </div>
-    <div id="status"></div>
-    <div id="err"></div>
-  </div>
-
   <main>
     <h1>💣 Bomb Countdown 💣</h1>
     <div id="timer">03:00</div>
@@ -67,6 +46,8 @@
     <p id="message"></p>
   </main>
 
+  <button id="unmute" title="Click to enable sound">🔊 Enable Sound</button>
+  <div id="status"></div>
   <footer>© Scan Quest</footer>
 
   <script>
@@ -74,87 +55,71 @@
     let durationSeconds = 180;               
     const correctCode = "1540";              
     const nextUrl = "/success.html";         
-    const musicURL = "https://cdn.pixabay.com/audio/2021/08/09/audio_c4f134fb2b.mp3"; // try first
+    const localMusic = "audio/countdown.mp3"; // drop your MP3 here (same repo)
 
     // ===== Elements =====
     const timerEl = document.getElementById('timer');
     const msgEl = document.getElementById('message');
     const flash = document.getElementById('flash');
-    const overlay = document.getElementById('overlay');
-    const startBtn = document.getElementById('startBtn');
-    const testBtn = document.getElementById('testBtn');
-    const vol = document.getElementById('vol');
-    const muteBtn = document.getElementById('muteBtn');
-    const errEl = document.getElementById('err');
+    const unmuteBtn = document.getElementById('unmute');
     const statusEl = document.getElementById('status');
 
-    // ===== WebAudio & hybrid engine =====
-    let ctx, masterGain, musicBuffer, musicSource, isMuted = false;
-    let bedNodes = []; // procedural bed nodes
-    let tickInterval = null;
+    // ===== Audio engine =====
+    let ctx, masterGain, musicBuffer, musicSource;
+    let bedNodes = [], tickInterval = null;
+    let audioReady = false, usingProcedural = false;
 
     function ensureCtx() {
       if (!ctx) {
         ctx = new (window.AudioContext || window.webkitAudioContext)();
         masterGain = ctx.createGain();
-        masterGain.gain.value = parseFloat(vol.value);
+        masterGain.gain.value = 0.8;
         masterGain.connect(ctx.destination);
       }
       if (ctx.state === 'suspended') ctx.resume();
     }
 
-    function setVolume(v) { if (masterGain) masterGain.gain.value = v; }
-    function toggleMute() {
-      isMuted = !isMuted;
-      if (masterGain) masterGain.gain.value = isMuted ? 0 : parseFloat(vol.value);
-      muteBtn.textContent = isMuted ? "Unmute" : "Mute";
+    function showUnmute(show=true){ unmuteBtn.style.display = show ? 'block' : 'none'; }
+
+    // Attempt to start audio (local MP3 first, then procedural)
+    async function initAudio() {
+      ensureCtx();
+      try {
+        // Try local MP3
+        statusEl.textContent = "Loading local MP3…";
+        const res = await fetch(localMusic, { cache: 'force-cache' });
+        if (!res.ok) throw new Error("Local MP3 not found");
+        const arr = await res.arrayBuffer();
+        musicBuffer = await new Promise((resolve, reject)=>ctx.decodeAudioData(arr, resolve, reject));
+        startMusicLoop();
+        audioReady = true;
+        statusEl.textContent = "MP3 soundtrack playing.";
+      } catch (e) {
+        // Fallback to procedural
+        console.warn("Local MP3 missing/blocked; falling back to procedural:", e);
+        startProceduralBed();
+        usingProcedural = true;
+        audioReady = true;
+        statusEl.textContent = "Fallback: procedural soundtrack.";
+      }
     }
 
-    function testBeep() {
-      ensureCtx();
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine'; o.frequency.value = 880;
-      g.gain.value = 0.0001;
-      g.gain.exponentialRampToValueAtTime(0.5, ctx.currentTime + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
-      o.connect(g).connect(masterGain);
-      o.start(); o.stop(ctx.currentTime + 0.4);
-    }
-
-    // --- MP3 path (preferred) with Safari-safe decode ---
-    async function tryLoadMusicBuffer() {
-      ensureCtx();
-      statusEl.textContent = "Loading MP3…";
-      const res = await fetch(musicURL, { mode: 'cors', cache: 'force-cache' });
-      const arr = await res.arrayBuffer();
-      // Safari-safe callback form:
-      return new Promise((resolve, reject) => {
-        ctx.decodeAudioData(arr, resolve, reject);
-      });
-    }
     function startMusicLoop() {
       stopMusicLoop();
       musicSource = ctx.createBufferSource();
       musicSource.buffer = musicBuffer;
       musicSource.loop = true;
       musicSource.connect(masterGain);
-      musicSource.start(0);
-      statusEl.textContent = "MP3 soundtrack playing.";
+      // Start with very low gain if autoplay might be blocked
+      try { musicSource.start(0); } catch(e) {}
     }
-    function stopMusicLoop() {
-      try { musicSource && musicSource.stop(); } catch(e) {}
-      musicSource = null;
-    }
+    function stopMusicLoop() { try { musicSource && musicSource.stop(); } catch(e){} musicSource = null; }
 
-    // --- Procedural fallback bed ---
+    // Procedural bed
     function startProceduralBed() {
-      ensureCtx();
-      stopProceduralBed();
-      statusEl.textContent = "Fallback: procedural soundtrack.";
-
+      ensureCtx(); stopProceduralBed();
       // Low pulsing bass with tremolo
-      const bass = ctx.createOscillator(); bass.type = 'sawtooth'; bass.frequency.value = 80;
+      const bass = ctx.createOscillator(); bass.type='sawtooth'; bass.frequency.value = 80;
       const bassGain = ctx.createGain(); bassGain.gain.value = 0.035;
       const lfo = ctx.createOscillator(); lfo.type='sine'; lfo.frequency.value = 1.2;
       const lfoGain = ctx.createGain(); lfoGain.gain.value = 0.03;
@@ -162,7 +127,6 @@
       bass.connect(bassGain).connect(masterGain);
       bass.start(); lfo.start();
       bedNodes.push(bass,bassGain,lfo,lfoGain);
-
       // Airy noise pad
       const buffer = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
       const data = buffer.getChannelData(0);
@@ -173,8 +137,7 @@
       noise.connect(band).connect(noiseGain).connect(masterGain);
       noise.start();
       bedNodes.push(noise, band, noiseGain);
-
-      // Tick every second
+      // Tick
       tickInterval = setInterval(()=>{
         const click = ctx.createOscillator();
         const g = ctx.createGain();
@@ -193,7 +156,7 @@
       bedNodes = [];
     }
 
-    // Explosion FX
+    // Explosion
     function explosion() {
       ensureCtx();
       const duration = 1.2;
@@ -233,6 +196,7 @@
     }
     function startCountdown() {
       renderTime();
+      if (countdownId) clearInterval(countdownId);
       countdownId = setInterval(() => {
         timeLeft--;
         renderTime();
@@ -240,36 +204,36 @@
           clearInterval(countdownId);
           timerEl.textContent = "💥 BOOM!";
           msgEl.textContent = "Too late! The bomb exploded!";
-          stopMusicLoop();
-          stopProceduralBed();
-          doFlash();
-          explosion();
+          stopMusicLoop(); stopProceduralBed();
+          doFlash(); explosion();
         }
       }, 1000);
     }
 
-    // Events
-    vol.addEventListener('input', () => { if (!isMuted) setVolume(parseFloat(vol.value)); });
-    muteBtn.addEventListener('click', toggleMute);
-    testBtn.addEventListener('click', () => { errEl.textContent=""; try { ensureCtx(); testBeep(); } catch(e){ errEl.textContent="Test sound failed: "+e.message; } });
+    // Auto‑arm on load
+    async function autoArm() {
+      // Start countdown immediately
+      startCountdown();
+      // Try to start audio; if blocked by autoplay, show unmute pill
+      try {
+        await initAudio();
+        // Some browsers still need a user gesture to actually hear it
+        if (ctx.state !== "running") { showUnmute(true); statusEl.textContent = "Sound blocked; click Enable Sound."; }
+      } catch (e) {
+        statusEl.textContent = "Audio init failed; click Enable Sound.";
+        showUnmute(true);
+      }
+    }
 
-    startBtn.addEventListener('click', async () => {
-      errEl.textContent = ""; statusEl.textContent = "";
+    // Unmute handler
+    unmuteBtn.addEventListener('click', async () => {
       try {
         ensureCtx();
-        // Try MP3 first
-        try {
-          musicBuffer = await tryLoadMusicBuffer();
-          startMusicLoop();
-        } catch (e) {
-          console.warn("MP3 decode failed, falling back:", e);
-          statusEl.textContent = "MP3 decode blocked; using procedural soundtrack.";
-          startProceduralBed();
-        }
-        overlay.style.display = 'none';
-        startCountdown();
-      } catch (e) {
-        errEl.textContent = "Could not start audio: " + e.message;
+        if (!audioReady) await initAudio();
+        if (ctx.state === 'suspended') await ctx.resume();
+        showUnmute(false); statusEl.textContent = usingProcedural ? "Procedural soundtrack playing." : "MP3 soundtrack playing.";
+      } catch(e){
+        statusEl.textContent = "Could not enable sound: " + e.message;
       }
     });
 
@@ -280,10 +244,8 @@
         clearInterval(countdownId);
         timerEl.textContent = "✅ SAFE";
         msgEl.textContent = "You successfully deactivated the bomb!";
-        stopMusicLoop();
-        stopProceduralBed();
-        doFlash();
-        setTimeout(() => { window.location.href = nextUrl; }, 1200);
+        stopMusicLoop(); stopProceduralBed(); doFlash();
+        setTimeout(() => { window.location.href = nextUrl; }, 1000);
       } else {
         msgEl.textContent = "❌ Incorrect code! Try again!";
         doFlash(120);
@@ -291,6 +253,9 @@
     }
     document.getElementById('deactivateBtn').addEventListener('click', checkCode);
     document.getElementById('codeInput').addEventListener('keyup', (e) => { if (e.key === 'Enter') checkCode(); });
+
+    // Kick off
+    window.addEventListener('load', autoArm);
   </script>
 </body>
 </html>
