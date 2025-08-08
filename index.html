@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>💣 Bomb Countdown 💣</title>
+  <style>
+    body { background: black; color: red; font-family: 'Courier New', monospace; text-align: center; overflow: hidden; }
+    h1 { font-size: 3em; margin-top: 30px; }
+    #timer { font-size: 5em; margin: 20px 0; }
+    input, button { font-size: 1.2em; padding: 10px; margin: 5px; }
+    button { background: red; color: white; border: none; border-radius: 5px; cursor: pointer; }
+    #message { font-size: 1.5em; margin-top: 20px; }
+    #flash { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: red; opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div id="flash"></div>
+  <h1>💣 Bomb Countdown 💣</h1>
+  <div id="timer">03:00</div>
+  <p>Enter the deactivation code:</p>
+  <input id="codeInput" type="text" placeholder="Enter code"/>
+  <button onclick="checkCode()">Deactivate</button>
+  <p id="message"></p>
+
+  <!-- Music -->
+  <audio id="bgm" autoplay loop>
+    <source src="https://cdn.pixabay.com/audio/2021/08/09/audio_c4f134fb2b.mp3" type="audio/mp3">
+  </audio>
+  <!-- Explosion Sound -->
+  <audio id="boom" src="https://actions.google.com/sounds/v1/explosions/explosion.ogg"></audio>
+
+  <script>
+    let timeLeft = 180;
+    const timer = document.getElementById('timer');
+    const msg = document.getElementById('message');
+    const flash = document.getElementById('flash');
+    const bgm = document.getElementById('bgm');
+    const boom = document.getElementById('boom');
+    const correctCode = "SCAN42";
+
+    function doFlash(duration = 300) {
+      flash.style.transition = "none";
+      flash.style.opacity = "0.8";
+      setTimeout(() => {
+        flash.style.transition = "opacity 0.5s ease-out";
+        flash.style.opacity = "0";
+      }, duration);
+    }
+
+    const countdown = setInterval(() => {
+      const m = Math.floor(timeLeft / 60);
+      const s = timeLeft % 60;
+      timer.textContent = `${m}:${s.toString().padStart(2,'0')}`;
+      timeLeft--;
+
+      if (timeLeft < 0) {
+        clearInterval(countdown);
+        timer.textContent = "💥 BOOM!";
+        msg.textContent = "Too late! The bomb exploded!";
+        bgm.pause();
+        boom.play();
+        doFlash();
+      }
+    }, 1000);
+
+    function checkCode() {
+      if (document.getElementById('codeInput').value.trim().toUpperCase() === correctCode) {
+        clearInterval(countdown);
+        timer.textContent = "✅ SAFE";
+        msg.textContent = "You successfully deactivated the bomb!";
+        bgm.pause();
+        doFlash();
+        setTimeout(() => window.location.href = "https://example.com/next-challenge", 2000);
+      } else {
+        msg.textContent = "❌ Incorrect code! Try again!";
+        doFlash(100);
+      }
+    }
+  </script>
+</body>
+</html>
