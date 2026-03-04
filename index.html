@@ -228,8 +228,13 @@ function checkCode(){
     doFlash(120);
   }
 }
-    document.getElementById('deactivateBtn').addEventListener('click', checkCode);
-    document.getElementById('codeInput').addEventListener('keyup', (e)=>{ if(e.key==='Enter') checkCode(); });
+   document.getElementById('deactivateBtn').addEventListener('click', checkCode);
+
+["q1","q2","q3"].forEach(id=>{
+  document.getElementById(id).addEventListener('keyup', (e)=>{
+    if (e.key === 'Enter') checkCode();
+  });
+});
 
     ctaBtn.addEventListener('click', () => {
       setStatus("Arming…");
