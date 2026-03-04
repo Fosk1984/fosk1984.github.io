@@ -184,19 +184,23 @@
       },1000);
     }
 
-    function checkCode(){
-      const entered = document.getElementById('codeInput').value.trim();
-      if (entered === correctCode) {
-        clearInterval(countdownId);
-        timerEl.textContent="✅ SAFE";
-        msgEl.textContent="You successfully deactivated the bomb!";
-        stopAllMusic(); doFlash();
-        setTimeout(()=>{ window.location.href = nextUrl; }, 900);
-      } else {
-        msgEl.textContent="❌ Incorrect code! Try again!";
-        doFlash(120);
-      }
-    }
+   function checkCode(){
+  const entered = document.getElementById('codeInput').value.trim().toLowerCase();
+
+  if (entered === correctAnswer) {
+    clearInterval(countdownId);
+    timerEl.textContent="✅ SAFE";
+    msgEl.textContent="You successfully identified the structure!";
+    stopAllMusic();
+    doFlash();
+
+    setTimeout(()=>{ window.location.href = nextUrl; }, 900);
+
+  } else {
+    msgEl.textContent="❌ Incorrect structure! Try again!";
+    doFlash(120);
+  }
+}
     document.getElementById('deactivateBtn').addEventListener('click', checkCode);
     document.getElementById('codeInput').addEventListener('keyup', (e)=>{ if(e.key==='Enter') checkCode(); });
 
